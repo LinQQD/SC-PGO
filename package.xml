@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>lio_loop_pgo</name>
+  <name>lio_loopclosure</name>
   <version>0.0.0</version>
   <description>
     This is an advanced implentation of LOAM.

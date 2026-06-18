@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(lio_loop_pgo)
+project(lio_loopclosure)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_STANDARD 17)

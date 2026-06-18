@@ -63,8 +63,8 @@
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/ISAM2.h>
 
-#include "lio_loop_pgo/common.h"
-#include "lio_loop_pgo/tic_toc.h"
+#include "lio_loopclosure/common.h"
+#include "lio_loopclosure/tic_toc.h"
 
 #include "scancontext/Scancontext.h"
 
@@ -350,7 +350,7 @@ void reportScPgoIdleIfReady()
     const bool map_refreshed = !pgoMapRefreshRequested.load();
 
     if (no_recent_input && no_recent_work && buffers_drained && loop_drained && graph_drained && map_refreshed) {
-        RCLCPP_WARN(g_node->get_logger(), "[LIO-LoopPGO] idle: no new odom/cloud for %.1f s, loop/ICP queue drained, graph optimized. Safe to call: ros2 service call /save_map std_srvs/srv/Empty. remaining_odom=%zu remaining_cloud=%zu remaining_icp=%zu",
+        RCLCPP_WARN(g_node->get_logger(), "[LIO-LoopClosure] idle: no new odom/cloud for %.1f s, loop/ICP queue drained, graph optimized. Safe to call: ros2 service call /save_map std_srvs/srv/Empty. remaining_odom=%zu remaining_cloud=%zu remaining_icp=%zu",
                  SC_PGO_IDLE_SEC, odom_queue_size, fullres_queue_size, icp_queue_size);
         scPgoIdleReported.store(true);
     }

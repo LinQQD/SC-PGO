@@ -19,7 +19,7 @@
 
 #include "scancontext/nanoflann.hpp"
 #include "scancontext/KDTreeVectorOfVectorsAdaptor.h"
-#include "lio_loop_pgo/tic_toc.h"
+#include "lio_loopclosure/tic_toc.h"
 
 using namespace Eigen;
 using namespace nanoflann;

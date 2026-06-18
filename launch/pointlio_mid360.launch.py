@@ -7,7 +7,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    rviz_lio_loop_pgo = LaunchConfiguration('rviz_lio_loop_pgo')
+    rviz_lio_loopclosure = LaunchConfiguration('rviz_lio_loopclosure')
     save_directory = LaunchConfiguration('save_directory')
     map_save_directory = LaunchConfiguration('map_save_directory')
     keyframe_meter_gap = LaunchConfiguration('keyframe_meter_gap')
@@ -17,7 +17,7 @@ def generate_launch_description():
     mapviz_filter_size = LaunchConfiguration('mapviz_filter_size')
 
     pgo_node = Node(
-        package='lio_loop_pgo',
+        package='lio_loopclosure',
         executable='alaserPGO',
         name='alaserPGO',
         output='screen',
@@ -42,18 +42,18 @@ def generate_launch_description():
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
-        name='rviz_lio_loop_pgo',
+        name='rviz_lio_loopclosure',
         arguments=['-d', PathJoinSubstitution([
-            FindPackageShare('lio_loop_pgo'),
+            FindPackageShare('lio_loopclosure'),
             'rviz_cfg',
-            'lio_loop_pgo.rviz',
+            'lio_loopclosure.rviz',
         ])],
         output='screen',
-        condition=IfCondition(rviz_lio_loop_pgo),
+        condition=IfCondition(rviz_lio_loopclosure),
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('rviz_lio_loop_pgo', default_value='false'),
+        DeclareLaunchArgument('rviz_lio_loopclosure', default_value='false'),
         DeclareLaunchArgument('keyframe_meter_gap', default_value='0.5'),
         DeclareLaunchArgument('keyframe_deg_gap', default_value='10.0'),
         DeclareLaunchArgument('sc_dist_thres', default_value='0.3'),
