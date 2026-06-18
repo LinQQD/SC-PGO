@@ -1,33 +1,34 @@
-# SC-PGO（Scan Context 位姿图优化）
+# LIO-LoopPGO（Scan Context 位姿图优化）
 
-一个基于 ROS2 的纯 SLAM 后端功能包，专注于**回环检测**和**位姿图优化**。它与前端 LiDAR 里程计**松耦合**——前端独立运行里程计，SC-PGO 通过话题订阅前端数据进行后端全局校正。
+一个基于 ROS2 的纯 SLAM 后端功能包，专注于**回环检测**和**位姿图优化**。它与前端 LiDAR 里程计**松耦合**——前端独立运行里程计，LIO-LoopPGO 通过话题订阅前端数据进行后端全局校正。
 
 ## 概览
 
 ```
-  ┌──────────────────┐   /aft_mapped_to_init (Odometry)    ┌─────────────────────┐
-  │                  │ ─────────────────────────────────►  │                     │
-  │  前端 LiDAR 里程计 │   /velodyne_cloud_registered_local  │     SC-PGO           │
-  │  (FAST-LIO,      │ ─────────────────────────────────►  │  (纯 SLAM 后端)      │
-  │   Point-LIO 等)  │   /cloud_for_scancontext (可选)     │                     │
-  │                  │ ─────────────────────────────────►  │  ┌─────────────────┐ │
-  │                  │                                      │  │ Scan Context    │ │
-  │                  │                                      │  │ 回环检测         │ │
-  │                  │                                      │  └────────┬────────┘ │
-  │                  │                                      │           │          │
-  │                  │                                      │  ┌────────▼────────┐ │
-  │                  │                                      │  │ ICP 精化        │ │
-  │                  │                                      │  └────────┬────────┘ │
-  │                  │                                      │           │          │
-  │                  │                                      │  ┌────────▼────────┐ │
-  │                  │                                      │  │ iSAM2 位姿      │ │
-  │                  │                                      │  │ 图优化器        │ │
-  │                  │                                      │  └────────┬────────┘ │
-  │                  │                                      │           │          │
-  │                  │                                      │  ┌────────▼────────┐ │
-  │                  │  /aft_pgo_odom, /aft_pgo_path        │  │ 可视化 &        │ │
-  │                  │ ◄──────────────────────────────────  │  │ 地图保存        │ │
-  └──────────────────┘                                      └─────────────────────┘
+  ┌──────────────────────┐                                                  ┌───────────────────────┐
+  │                      │ /aft_mapped_to_init (Odometry)            │                       │
+  │                      │ ────────────────────────────────────────────────►  │                       │
+  │  前端 LiDAR 里程计  │ /velodyne_cloud_registered_local    │       LIO-LoopPGO           │
+  │  (FAST-LIO,          │ ────────────────────────────────────────────────►  │  (纯 SLAM 后端)       │
+  │   Point-LIO 等)      │ /cloud_for_scancontext (可选)        │                       │
+  │                      │ ────────────────────────────────────────────────►  │  ┌─────────────────┐  │
+  │                      │                                                  │  │ Scan Context    │  │
+  │                      │                                                  │  │ 回环检测        │  │
+  │                      │                                                  │  └────────┬────────┘  │
+  │                      │                                                  │           │           │
+  │                      │                                                  │  ┌────────▼────────┐  │
+  │                      │                                                  │  │ ICP 精化        │  │
+  │                      │                                                  │  └────────┬────────┘  │
+  │                      │                                                  │           │           │
+  │                      │                                                  │  ┌────────▼────────┐  │
+  │                      │                                                  │  │ iSAM2 位姿      │  │
+  │                      │                                                  │  │ 图优化器        │  │
+  │                      │                                                  │  └────────┬────────┘  │
+  │                      │                                                  │           │           │
+  │                      │                                                  │  ┌────────▼────────┐  │
+  │                      │ /aft_pgo_odom, /aft_pgo_path              │  │ 可视化 &        │  │
+  │                      │ ◄───────────────────────────────────────────────  │  │ 地图保存        │  │
+  └──────────────────────┘                                                  └───────────────────────┘
 ```
 
 ## 主要特点
@@ -64,11 +65,11 @@
 ```bash
 # 克隆到 ROS2 工作空间
 cd ~/ros2_ws/src
-git clone <本仓库> sc_pgo
+git clone <本仓库> lio_loop_pgo
 
 # 编译
 cd ~/ros2_ws
-colcon build --packages-select sc_pgo
+colcon build --packages-select lio_loop_pgo
 source install/setup.bash
 ```
 
@@ -98,18 +99,18 @@ source install/setup.bash
 
 | 服务 | 类型 | 说明 |
 |------|------|------|
-| `/save_map` | `std_srvs/srv/Empty` | 按需保存校正地图和原始地图。SC-PGO 空闲时会打印提示，告知可以安全保存 |
+| `/save_map` | `std_srvs/srv/Empty` | 按需保存校正地图和原始地图。LIO-LoopPGO 空闲时会打印提示，告知可以安全保存 |
 
 ### 启动文件
 
 **FAST-LIO2 + Ouster64：**
 ```bash
-ros2 launch sc_pgo fastlio_ouster64.launch.py
+ros2 launch lio_loop_pgo fastlio_ouster64.launch.py
 ```
 
 **Point-LIO + Mid-360：**
 ```bash
-ros2 launch sc_pgo pointlio_mid360.launch.py
+ros2 launch lio_loop_pgo pointlio_mid360.launch.py
 ```
 
 **启动参数：**
@@ -123,15 +124,15 @@ ros2 launch sc_pgo pointlio_mid360.launch.py
 | `mapviz_filter_size` | 0.4 | 地图可视化体素滤波的叶子大小（米） |
 | `save_directory` | `$HOME/.../data/` | 保存优化位姿和逐帧点云的目录 |
 | `map_save_directory` | `$HOME/.../map/` | 保存 PCD 地图文件的目录 |
-| `rvizscpgo` | `true` / `false` | 是否自动启动 RViz2 可视化 |
+| `rviz_lio_loop_pgo` | `true` / `false` | 是否自动启动 RViz2 可视化 |
 
 ### 生成地图的典型流程
 
-1. 同时启动前端里程计（如 FAST-LIO2）和 SC-PGO
+1. 同时启动前端里程计（如 FAST-LIO2）和 LIO-LoopPGO
 2. 操控机器人在环境中运行，确保经过回环区域
-3. 等待 SC-PGO 打印空闲提示：
+3. 等待 LIO-LoopPGO 打印空闲提示：
    ```
-   [SC-PGO] idle: no new odom/cloud for 10.0 s, loop/ICP queue drained, graph optimized.
+   [LIO-LoopPGO] idle: no new odom/cloud for 10.0 s, loop/ICP queue drained, graph optimized.
    Safe to call: ros2 service call /save_map std_srvs/srv/Empty
    ```
 4. 调用保存服务：
@@ -247,11 +248,11 @@ ros2 launch sc_pgo pointlio_mid360.launch.py
 ## 文件结构
 
 ```
-sc_pgo/
+lio_loop_pgo/
 ├── CMakeLists.txt
 ├── package.xml
 ├── include/
-│   ├── sc_pgo/
+│   ├── lio_loop_pgo/
 │   │   ├── common.h              # PointType, Pose6D, 角度工具函数
 │   │   └── tic_toc.h             # TicToc 计时工具
 │   └── scancontext/
@@ -265,7 +266,7 @@ sc_pgo/
 │   ├── fastlio_ouster64.launch.py       # FAST-LIO2 + Ouster64 启动文件
 │   └── pointlio_mid360.launch.py        # Point-LIO + Mid-360 启动文件
 ├── rviz_cfg/
-│   └── sc_pgo.rviz                      # RViz2 配置
+│   └── lio_loop_pgo.rviz                      # RViz2 配置
 └── utils/
     ├── python/
     │   ├── makeMergedMap.py             # 离线地图拼接（带强度着色）
@@ -283,7 +284,7 @@ sc_pgo/
 
 - **FAST-LIO2**（Ouster OS1-64）— 启动文件：`fastlio_ouster64.launch.py`
 - **Point-LIO**（Livox Mid-360）— 启动文件：`pointlio_mid360.launch.py`
-- SC-PGO 与前端里程计松耦合，理论上支持任意发布所需话题的 LiDAR SLAM 前端
+- LIO-LoopPGO 与前端里程计松耦合，理论上支持任意发布所需话题的 LiDAR SLAM 前端
 
 ## 致谢
 

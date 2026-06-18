@@ -7,7 +7,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    rvizscpgo = LaunchConfiguration('rvizscpgo')
+    rviz_lio_loop_pgo = LaunchConfiguration('rviz_lio_loop_pgo')
     save_directory = LaunchConfiguration('save_directory')
     map_save_directory = LaunchConfiguration('map_save_directory')
     keyframe_meter_gap = LaunchConfiguration('keyframe_meter_gap')
@@ -17,7 +17,7 @@ def generate_launch_description():
     mapviz_filter_size = LaunchConfiguration('mapviz_filter_size')
 
     pgo_node = Node(
-        package='sc_pgo',
+        package='lio_loop_pgo',
         executable='alaserPGO',
         name='alaserPGO',
         output='screen',
@@ -42,18 +42,18 @@ def generate_launch_description():
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
-        name='rvizscpgo',
+        name='rviz_lio_loop_pgo',
         arguments=['-d', PathJoinSubstitution([
-            FindPackageShare('sc_pgo'),
+            FindPackageShare('lio_loop_pgo'),
             'rviz_cfg',
-            'sc_pgo.rviz',
+            'lio_loop_pgo.rviz',
         ])],
         output='screen',
-        condition=IfCondition(rvizscpgo),
+        condition=IfCondition(rviz_lio_loop_pgo),
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('rvizscpgo', default_value='true'),
+        DeclareLaunchArgument('rviz_lio_loop_pgo', default_value='true'),
         DeclareLaunchArgument('keyframe_meter_gap', default_value='0.5'),
         DeclareLaunchArgument('keyframe_deg_gap', default_value='10.0'),
         DeclareLaunchArgument('sc_dist_thres', default_value='0.2'),

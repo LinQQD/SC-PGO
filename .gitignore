@@ -1,2 +1,19 @@
- __pycache__/ 
- *.pyc 
+__pycache__/
+*.pyc
+*.npy
+
+# C++ 编译产物
+build/
+*.o
+*.a
+*.so
+
+# IDE
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db 
+
+.claude
