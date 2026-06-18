@@ -4,6 +4,8 @@ __pycache__/
 
 # C++ 编译产物
 build/
+install/
+log/
 *.o
 *.a
 *.so
@@ -17,3 +19,7 @@ build/
 Thumbs.db 
 
 .claude
+
+Git教程.md
+
+.git

@@ -122,6 +122,27 @@ struct SCLoopCandidate {
 
 std::queue<SCLoopCandidate> scLoopICPBuf;
 
+extern std::shared_ptr<rclcpp::Node> g_node;
+extern std::shared_ptr<tf2_ros::TransformBroadcaster> g_tf_broadcaster;
+
+std::atomic<bool> g_stop_requested {false};
+std::atomic<bool> g_ros_interfaces_alive {true};
+
+static inline void requestStop()
+{
+    g_stop_requested.store(true);
+}
+
+static inline bool shouldKeepRunning()
+{
+    return !g_stop_requested.load() && rclcpp::ok();
+}
+
+static inline bool canUseRosInterfaces()
+{
+    return !g_stop_requested.load() && g_ros_interfaces_alive.load() && static_cast<bool>(g_node);
+}
+
 std::mutex mBuf;
 std::mutex mKF;
 
@@ -209,6 +230,20 @@ std::string map_save_directory;
 std::string pgKITTIformat, pgScansDirectory;
 std::string odomKITTIformat;
 std::fstream pgTimeSaveStream;
+
+struct SaveBothMapsResult {
+    bool has_keyframes = false;
+    bool corrected_saved = false;
+    bool uncorrected_saved = false;
+    bool dense_saved = false;
+    std::string corrected_path;
+    std::string uncorrected_path;
+    std::string dense_path;
+    std::string map_directory;
+    size_t corrected_points = 0;
+    size_t uncorrected_points = 0;
+    size_t dense_points = 0;
+};
 
 std::string padZeros(int val, int num_digits = 6) {
   std::ostringstream out;
@@ -359,8 +394,10 @@ void reportScPgoIdleIfReady()
 void process_idle_status(void)
 {
     rclcpp::WallRate rate(1.0);
-    while (rclcpp::ok()) {
+    while (shouldKeepRunning()) {
         rate.sleep();
+        if (!shouldKeepRunning())
+            break;
         reportScPgoIdleIfReady();
     }
 }
@@ -444,6 +481,12 @@ pcl::PointCloud<PointType>::Ptr local2global(const pcl::PointCloud<PointType>& c
 
 void pubPath( void )
 {
+    if (!shouldKeepRunning())
+        return;
+
+    if (!canUseRosInterfaces())
+        return;
+
     std::vector<Pose6D> keyframePosesUpdatedSnapshot;
     std::vector<double> keyframeTimesSnapshot;
     {
@@ -484,6 +527,8 @@ void pubPath( void )
         pathAftPGO.header.frame_id = "camera_init";
         pathAftPGO.poses.push_back(poseStampAftPGO);
     }
+    if (!canUseRosInterfaces())
+        return;
     pubOdomAftPGO->publish(odomAftPGO); // last pose
     pubPathAftPGO->publish(pathAftPGO); // poses
 
@@ -680,15 +725,17 @@ std::optional<gtsam::Pose3> doICPVirtualRelative(int _loop_kf_idx, int _curr_kf_
     }
 
     // loop verification via ROS pub
-    sensor_msgs::msg::PointCloud2 cureKeyframeCloudMsg;
-    pcl::toROSMsg(cureKeyframeCloud, cureKeyframeCloudMsg);
-    cureKeyframeCloudMsg.header.frame_id = "camera_init";
-    pubLoopScanLocal->publish(cureKeyframeCloudMsg);
+    if (canUseRosInterfaces()) {
+        sensor_msgs::msg::PointCloud2 cureKeyframeCloudMsg;
+        pcl::toROSMsg(cureKeyframeCloud, cureKeyframeCloudMsg);
+        cureKeyframeCloudMsg.header.frame_id = "camera_init";
+        pubLoopScanLocal->publish(cureKeyframeCloudMsg);
 
-    sensor_msgs::msg::PointCloud2 targetKeyframeCloudMsg;
-    pcl::toROSMsg(targetKeyframeCloud, targetKeyframeCloudMsg);
-    targetKeyframeCloudMsg.header.frame_id = "camera_init";
-    pubLoopSubmapLocal->publish(targetKeyframeCloudMsg);
+        sensor_msgs::msg::PointCloud2 targetKeyframeCloudMsg;
+        pcl::toROSMsg(targetKeyframeCloud, targetKeyframeCloudMsg);
+        targetKeyframeCloudMsg.header.frame_id = "camera_init";
+        pubLoopSubmapLocal->publish(targetKeyframeCloudMsg);
+    }
 
     // ICP Settings
     pcl::IterativeClosestPoint<PointType, PointType> icp;
@@ -839,10 +886,12 @@ std::optional<sensor_msgs::msg::PointCloud2::ConstSharedPtr> findNearestScanCont
 
 void process_pg()
 {
-    while(rclcpp::ok())
+    while(shouldKeepRunning())
     {
         while ( true )
         {
+            if (!shouldKeepRunning())
+                break;
             //
             // pop and check keyframe is or not
             //
@@ -1078,11 +1127,13 @@ void performSCLoopClosure(void)
 
 void process_lcd(void)
 {
-    float loopClosureFrequency = 1.0; // can change 
+    float loopClosureFrequency = 1.0; // can change
     rclcpp::WallRate rate(loopClosureFrequency);
-    while (rclcpp::ok())
+    while (shouldKeepRunning())
     {
         rate.sleep();
+        if (!shouldKeepRunning())
+            break;
         performSCLoopClosure();
         // performRSLoopClosure(); // TODO
     }
@@ -1090,7 +1141,7 @@ void process_lcd(void)
 
 void process_icp(void)
 {
-    while(rclcpp::ok())
+    while(shouldKeepRunning())
     {
         SCLoopCandidate loop_candidate;
         bool has_loop_candidate = false;
@@ -1108,6 +1159,10 @@ void process_icp(void)
 
         if (has_loop_candidate)
         {
+            if (!shouldKeepRunning()) {
+                loopQueuedOrRunning.store(false);
+                break;
+            }
             markScPgoActive();
             const int prev_node_idx = loop_candidate.prev_idx;
             const int curr_node_idx = loop_candidate.curr_idx;
@@ -1173,8 +1228,10 @@ void process_viz_path(void)
 {
     float hz = 10.0;
     rclcpp::WallRate rate(hz);
-    while (rclcpp::ok()) {
+    while (shouldKeepRunning()) {
         rate.sleep();
+        if (!shouldKeepRunning())
+            break;
         if(recentIdxUpdatedAtomic.load() > 1) {
             pubPath();
         }
@@ -1185,8 +1242,10 @@ void process_isam(void)
 {
     float hz = 1;
     rclcpp::WallRate rate(hz);
-    while (rclcpp::ok()) {
+    while (shouldKeepRunning()) {
         rate.sleep();
+        if (!shouldKeepRunning())
+            break;
 
         bool has_pending_graph = false;
         {
@@ -1221,6 +1280,12 @@ void process_isam(void)
 
 void pubMap(void)
 {
+    if (!shouldKeepRunning())
+        return;
+
+    if (!canUseRosInterfaces())
+        return;
+
     int SKIP_FRAMES = 2; // sparse map visulalization to save computations
     int counter = 0;
 
@@ -1257,14 +1322,18 @@ void pubMap(void)
     sensor_msgs::msg::PointCloud2 laserCloudMapPGOMsg;
     pcl::toROSMsg(*laserCloudMapPGO, laserCloudMapPGOMsg);
     laserCloudMapPGOMsg.header.frame_id = "camera_init";
-    pubMapAftPGO->publish(laserCloudMapPGOMsg);
+    if (canUseRosInterfaces())
+        pubMapAftPGO->publish(laserCloudMapPGOMsg);
 }
 
 /// Build and save two PCD maps for comparison:
 ///   - corrected_map.pcd  — keyframe clouds transformed by ISAM2-optimized poses
 ///   - uncorrected_map.pcd — same keyframe clouds transformed by raw odometry poses
-void saveBothMaps(void)
+SaveBothMapsResult saveBothMapsPure(void)
 {
+    SaveBothMapsResult result;
+    result.map_directory = map_save_directory;
+
     // Snapshot all data under lock
     std::vector<pcl::PointCloud<PointType>::Ptr> cloudsSnapshot;
     std::vector<Pose6D> odomPoses;     // raw odometry poses (uncorrected)
@@ -1284,9 +1353,10 @@ void saveBothMaps(void)
     }
 
     if (cloudsSnapshot.empty()) {
-        RCLCPP_WARN(g_node->get_logger(), "[saveBothMaps] No keyframes to save.");
-        return;
+        result.has_keyframes = false;
+        return result;
     }
+    result.has_keyframes = true;
 
     // --- Corrected map (after PGO) ---
     pcl::PointCloud<PointType>::Ptr correctedMap(new pcl::PointCloud<PointType>());
@@ -1301,10 +1371,9 @@ void saveBothMaps(void)
     vg.filter(*filteredCorrected);
 
     std::string correctedPath = map_save_directory + "corrected_map.pcd";
-    if (pcl::io::savePCDFileASCII(correctedPath, *filteredCorrected) == 0)
-        RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Corrected map saved: %s (%zu points)", correctedPath.c_str(), filteredCorrected->size());
-    else
-        RCLCPP_ERROR(g_node->get_logger(), "[saveBothMaps] Failed to save corrected map to %s", correctedPath.c_str());
+    result.corrected_path = correctedPath;
+    result.corrected_points = filteredCorrected->size();
+    result.corrected_saved = (pcl::io::savePCDFileASCII(correctedPath, *filteredCorrected) == 0);
 
     // --- Uncorrected map (raw odometry only) ---
     pcl::PointCloud<PointType>::Ptr uncorrectedMap(new pcl::PointCloud<PointType>());
@@ -1317,10 +1386,9 @@ void saveBothMaps(void)
     vg.filter(*filteredUncorrected);
 
     std::string uncorrectedPath = map_save_directory + "uncorrected_map.pcd";
-    if (pcl::io::savePCDFileASCII(uncorrectedPath, *filteredUncorrected) == 0)
-        RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Uncorrected map saved: %s (%zu points)", uncorrectedPath.c_str(), filteredUncorrected->size());
-    else
-        RCLCPP_ERROR(g_node->get_logger(), "[saveBothMaps] Failed to save uncorrected map to %s", uncorrectedPath.c_str());
+    result.uncorrected_path = uncorrectedPath;
+    result.uncorrected_points = filteredUncorrected->size();
+    result.uncorrected_saved = (pcl::io::savePCDFileASCII(uncorrectedPath, *filteredUncorrected) == 0);
 
     // Also save a version of the corrected map downsampled to 0.1 m for CloudCompare viewing
     pcl::PointCloud<PointType>::Ptr denseCorrected(new pcl::PointCloud<PointType>());
@@ -1331,15 +1399,49 @@ void saveBothMaps(void)
     pcl::PointCloud<PointType>::Ptr denseFiltered(new pcl::PointCloud<PointType>());
     vgDense.filter(*denseFiltered);
     std::string densePath = map_save_directory + "corrected_map_dense.pcd";
-    pcl::io::savePCDFileASCII(densePath, *denseFiltered);
+    result.dense_path = densePath;
+    result.dense_points = denseFiltered->size();
+    result.dense_saved = (pcl::io::savePCDFileASCII(densePath, *denseFiltered) == 0);
 
-    RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Maps saved under %s", map_save_directory.c_str());
+    return result;
 }
 
+void logSaveBothMapsResult(const SaveBothMapsResult& result)
+{
+    if (!result.has_keyframes) {
+        RCLCPP_WARN(g_node->get_logger(), "[saveBothMaps] No keyframes to save.");
+        return;
+    }
+
+    if (result.corrected_saved)
+        RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Corrected map saved: %s (%zu points)", result.corrected_path.c_str(), result.corrected_points);
+    else
+        RCLCPP_ERROR(g_node->get_logger(), "[saveBothMaps] Failed to save corrected map to %s", result.corrected_path.c_str());
+
+    if (result.uncorrected_saved)
+        RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Uncorrected map saved: %s (%zu points)", result.uncorrected_path.c_str(), result.uncorrected_points);
+    else
+        RCLCPP_ERROR(g_node->get_logger(), "[saveBothMaps] Failed to save uncorrected map to %s", result.uncorrected_path.c_str());
+
+    if (result.dense_saved)
+        RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Dense corrected map saved: %s (%zu points)", result.dense_path.c_str(), result.dense_points);
+    else
+        RCLCPP_ERROR(g_node->get_logger(), "[saveBothMaps] Failed to save dense corrected map to %s", result.dense_path.c_str());
+
+    RCLCPP_INFO(g_node->get_logger(), "[saveBothMaps] Maps saved under %s", result.map_directory.c_str());
+}
+
+void saveBothMaps(void)
+{
+    logSaveBothMapsResult(saveBothMapsPure());
+}
 // ROS service callback: /save_map
 void saveMapCallback(const std::shared_ptr<std_srvs::srv::Empty::Request> /*req*/,
                      std::shared_ptr<std_srvs::srv::Empty::Response> /*res*/)
 {
+    if (!canUseRosInterfaces() || g_stop_requested.load())
+        return;
+
     RCLCPP_INFO(g_node->get_logger(), "[saveMapCallback] Triggered by service call.");
     saveBothMaps();
 }
@@ -1348,8 +1450,10 @@ void process_viz_map(void)
 {
     float vizmapFrequency = 0.5; // refresh map visualization every 2s when requested
     rclcpp::WallRate rate(vizmapFrequency);
-    while (rclcpp::ok()) {
+    while (shouldKeepRunning()) {
         rate.sleep();
+        if (!shouldKeepRunning())
+            break;
         if(recentIdxUpdatedAtomic.load() > 1 && pgoMapRefreshRequested.exchange(false)) {
             pubMap();
         }
@@ -1360,6 +1464,8 @@ void process_viz_map(void)
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
+    g_stop_requested.store(false);
+    g_ros_interfaces_alive.store(true);
     g_node = std::make_shared<rclcpp::Node>("laserPGO");
     g_tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(g_node);
 
@@ -1435,10 +1541,22 @@ int main(int argc, char **argv)
     std::thread idle_status {process_idle_status}; // one-shot idle prompt for safe map saving
 
     rclcpp::spin(g_node);
-    // Auto-save maps on shutdown (after spin returns)
-    RCLCPP_INFO(g_node->get_logger(), "[main] Shutting down, saving both maps...");
-    saveBothMaps();
-    rclcpp::shutdown();
+
+    requestStop();
+    g_ros_interfaces_alive.store(false);
+
+    g_save_map_service.reset();
+    subLaserCloudFullRes.reset();
+    subScanContextCloud.reset();
+    subLaserOdometry.reset();
+    subGPS.reset();
+    pubMapAftPGO.reset();
+    pubOdomAftPGO.reset();
+    pubPathAftPGO.reset();
+    pubLoopScanLocal.reset();
+    pubLoopSubmapLocal.reset();
+    pubOdomRepubVerifier.reset();
+    g_tf_broadcaster.reset();
 
     posegraph_slam.join();
     lc_detection.join();
@@ -1447,6 +1565,33 @@ int main(int argc, char **argv)
     viz_map.join();
     viz_path.join();
     idle_status.join();
+
+    const SaveBothMapsResult shutdown_save_result = saveBothMapsPure();
+    std::cout << "[main] Shutting down, saving both maps..." << std::endl;
+    if (!shutdown_save_result.has_keyframes) {
+        std::cout << "[saveBothMaps] No keyframes to save." << std::endl;
+    } else {
+        if (shutdown_save_result.corrected_saved)
+            std::cout << "[saveBothMaps] Corrected map saved: " << shutdown_save_result.corrected_path << " (" << shutdown_save_result.corrected_points << " points)" << std::endl;
+        else
+            std::cerr << "[saveBothMaps] Failed to save corrected map to " << shutdown_save_result.corrected_path << std::endl;
+
+        if (shutdown_save_result.uncorrected_saved)
+            std::cout << "[saveBothMaps] Uncorrected map saved: " << shutdown_save_result.uncorrected_path << " (" << shutdown_save_result.uncorrected_points << " points)" << std::endl;
+        else
+            std::cerr << "[saveBothMaps] Failed to save uncorrected map to " << shutdown_save_result.uncorrected_path << std::endl;
+
+        if (shutdown_save_result.dense_saved)
+            std::cout << "[saveBothMaps] Dense corrected map saved: " << shutdown_save_result.dense_path << " (" << shutdown_save_result.dense_points << " points)" << std::endl;
+        else
+            std::cerr << "[saveBothMaps] Failed to save dense corrected map to " << shutdown_save_result.dense_path << std::endl;
+
+        std::cout << "[saveBothMaps] Maps saved under " << shutdown_save_result.map_directory << std::endl;
+    }
+
+    g_node.reset();
+    if (rclcpp::ok())
+        rclcpp::shutdown();
 
     return 0;
 }
